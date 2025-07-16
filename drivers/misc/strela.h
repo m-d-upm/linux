@@ -88,10 +88,23 @@ struct strela_csrs {
     u32 out3_count;
 };
 
+strut strela_config {
+    u8 src_buff_id;
+    u8 dst_buff_id;
+    struct strela_csrs csrs;  
+}
+
+struct strela_alloc {
+    u32 size;
+    u8 id;
+};
+
 #define IOCTL_BASE 'W'
 
-#define IOCTL_STRELA_CONTROL	_IOW(IOCTL_BASE, 1, struct strela_csrs)
+#define IOCTL_STRELA_CONTROL	_IOW(IOCTL_BASE, 1, struct strela_config)
 #define IOCTL_STRELA_CONFIG 	_IO(IOCTL_BASE, 2)
-#define IOCTL_STRELA_EXEC	_IO(IOCTL_BASE, 3)
+#define IOCTL_STRELA_EXEC	    _IO(IOCTL_BASE, 3)
+#define IOCTL_STRELA_ALLOC 	    _IOWR(IOCTL_BASE, 4, struct strela_alloc)
+#define IOCTL_STRELA_FREE	    _IOW(IOCTL_BASE, 5, u8)
 
 #endif

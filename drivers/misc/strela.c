@@ -27,10 +27,10 @@
 
 #include "strela.h"
 
-#define STRELA_DATA_REGION_SIZE 	(0x100000U * 4U) // 4 MB
-
 #define STRELA_CONF_TIMEOUT			(1) // seconds
 #define STRELA_TIMEOUT				(15) // seconds
+
+#define STRELA_MAX_ALLOC_BUFFS		(4) 
 
 struct strela_reg_addr_map {
 	void __iomem *strela_ctrl;
@@ -62,12 +62,18 @@ struct strela_reg_addr_map {
 	void __iomem *strela_am_opr;
 };
 
+struct strela_dma_alloc_info {
+	// if any of the pointers != NULL or size != 0 the buffer can be freed
+	void *vptr;
+	dma_addr_t dmaptr;
+	u32 size;
+};
+
 struct strela_device {
 	struct miscdevice miscdev;
 	void __iomem *reg;
 	struct strela_reg_addr_map regs;
-	void *vptr;
-	dma_addr_t dmaptr;
+	struct strela_dma_alloc_info alloc_info[STRELA_MAX_ALLOC_BUFFS];
 	struct mutex lock;
 };
 
@@ -91,13 +97,104 @@ static long strela_ioctl(struct file *fp, unsigned int ioctl_num, unsigned long 
 	mutex_lock(&strela_dev->lock);
 
 	switch (ioctl_num) {
+		case IOCTL_STRELA_FREE: {
+			u8 id = 0;
+
+			if (copy_from_user(&id, (void __user *)ioctl_param, sizeof(u8))) {
+				dev_err(strela_dev->miscdev.parent, "STRELA: Copying of buffer ID from user failed\n");
+
+				return -EFAULT;
+			}
+
+			if(id >= STRELA_MAX_ALLOC_BUFFS) {
+				dev_err(strela_dev->miscdev.parent, "STRELA: Invalid buffer ID provided\n");
+
+				return -EFAULT;
+			}
+
+			if(strela_dev->alloc_info[id].size == 0) {
+				dev_err(strela_dev->miscdev.parent, "STRELA: Buffer with the provided ID was already deallocated\n");
+
+				return -EFAULT;
+			}
+
+			dma_free_coherent(strela_dev->miscdev.parent, strela_dev->alloc_info[id].size, strela_dev->alloc_info[id].vptr, strela_dev->alloc_info[id].dmaptr);
+
+			strela_dev->alloc_info[id].size = 0;
+			strela_dev->alloc_info[id].vptr = NULL;
+			strela_dev->alloc_info[id].dmaptr = NULL;
+
+			break;
+		}
+
+		case IOCTL_STRELA_ALLOC: {
+			struct strela_alloc alloc_req = {0};
+
+			if (copy_from_user(&alloc_req, (void __user *)ioctl_param, sizeof(struct alloc_req))) {
+				dev_err(strela_dev->miscdev.parent, "STRELA: Copying of allocation request data from user failed\n");
+
+				return -EFAULT;
+			}
+
+			int free_buff_id = -1;
+
+			for (int i = 0; i < STRELA_MAX_ALLOC_BUFFS; i++) {
+				if(strela_dev->alloc_info[i].size == 0) {
+					free_buff_id = i;
+					break;
+				}
+			}
+
+			if(free_buff_id == -1) {
+				dev_err(strela_dev->miscdev.parent, "STRELA: No more free buffers available for memory allocation\n");
+
+				return -ENOMEM;	
+			}
+			else {
+				// allocate a region for STRELA's read/write operations
+				strela_dev->alloc_info[free_buff_id].vptr = dma_alloc_coherent(strela_dev->miscdev.parent, alloc_req.size, &strela_dev->alloc_info[free_buff_id].dmaptr, GFP_KERNEL);
+
+				if (!strela_dev->vptr) {
+					strela_dev->alloc_info[free_buff_id].size = 0;
+					strela_dev->alloc_info[free_buff_id].vptr = NULL;
+					strela_dev->alloc_info[free_buff_id].dmaptr = NULL;
+
+					return -ENOMEM;
+				}
+				else {
+					strela_dev->alloc_info[free_buff_id].size = alloc_req.size;
+					alloc_req.id = free_buff_id;
+
+					if (copy_to_user((void __user *)ioctl_param, &alloc_req, sizeof(struct alloc_req))) {
+						dev_err(strela_dev->miscdev.parent, "STRELA: Failed to copy data to user space\n");
+
+						return -EFAULT; // Error in copying data
+            		}
+				}
+			}
+
+			break;
+		}
+
 		case IOCTL_STRELA_CONTROL: {
-			struct strela_csrs strela_csrs;
+			struct strela_config strela;			
 
 			//dev_info(strela_dev->miscdev.parent, "Copying new settings from user\n");
 
-			if (copy_from_user(&strela_csrs, (void __user *)ioctl_param, sizeof(struct strela_csrs))) {
+			if (copy_from_user(&strela, (void __user *)ioctl_param, sizeof(struct strela_config))) {
 				dev_err(strela_dev->miscdev.parent, "STRELA: Copying of CSRs config from user failed\n");
+
+				return -EFAULT;
+			}
+
+			if((strela.src_buff_id >= STRELA_MAX_ALLOC_BUFFS) || (strela.dst_buff_id >= STRELA_MAX_ALLOC_BUFFS)) {
+				dev_err(strela_dev->miscdev.parent, "STRELA: Provided src and dst buffer index are out of bounds\n");
+
+				return -EFAULT;
+			}
+
+			if((strela_dev->alloc_info[strela.src_buff_id].size == 0) || (strela_dev->alloc_info[strela.dst_buff_id].size == 0)) {
+				dev_err(strela_dev->miscdev.parent, "STRELA: Cannot perform DMA transfers on unallocated buffer(s)\n");
 
 				return -EFAULT;
 			}
@@ -105,30 +202,30 @@ static long strela_ioctl(struct file *fp, unsigned int ioctl_num, unsigned long 
 			//dev_info(strela_dev->miscdev.parent, "Setting config values\n");
 
 			// configure STRELA device's DMA addresses
-			iowrite32(strela_dev->dmaptr + strela_csrs.conf_offs, strela_dev->regs.strela_conf_addr);
-			iowrite32(strela_csrs.conf_count * 4U, strela_dev->regs.strela_conf_size);
+			iowrite32(strela_dev->alloc_info[strela.src_buff_id].dmaptr + strela.csrs.conf_offs, strela_dev->regs.strela_conf_addr);
+			iowrite32(strela.csrs.conf_count * 4U, strela_dev->regs.strela_conf_size);
 
 			//dev_info(strela_dev->miscdev.parent, "Setting values for IN registers\n");
 
-			iowrite32(strela_dev->dmaptr + strela_csrs.in0_offs * 4U, strela_dev->regs.strela_in0_addr);
-			iowrite32(STRELA_IN_BITS_STRIDE_COUNT(strela_csrs.in0_stride, strela_csrs.in0_count), strela_dev->regs.strela_in0_size);
-			iowrite32(strela_dev->dmaptr + strela_csrs.in1_offs * 4U, strela_dev->regs.strela_in1_addr);
-			iowrite32(STRELA_IN_BITS_STRIDE_COUNT(strela_csrs.in1_stride, strela_csrs.in1_count), strela_dev->regs.strela_in1_size);
-			iowrite32(strela_dev->dmaptr + strela_csrs.in2_offs * 4U, strela_dev->regs.strela_in2_addr);
-			iowrite32(STRELA_IN_BITS_STRIDE_COUNT(strela_csrs.in2_stride, strela_csrs.in2_count), strela_dev->regs.strela_in2_size);
-			iowrite32(strela_dev->dmaptr + strela_csrs.in3_offs * 4U, strela_dev->regs.strela_in3_addr);
-			iowrite32(STRELA_IN_BITS_STRIDE_COUNT(strela_csrs.in3_stride, strela_csrs.in3_count), strela_dev->regs.strela_in3_size);
+			iowrite32(strela_dev->alloc_info[strela.src_buff_id].dmaptr + strela.csrs.in0_offs * 4U, strela_dev->regs.strela_in0_addr);
+			iowrite32(STRELA_IN_BITS_STRIDE_COUNT(strela.csrs.in0_stride, strela.csrs.in0_count), strela_dev->regs.strela_in0_size);
+			iowrite32(strela_dev->alloc_info[strela.src_buff_id].dmaptr + strela.csrs.in1_offs * 4U, strela_dev->regs.strela_in1_addr);
+			iowrite32(STRELA_IN_BITS_STRIDE_COUNT(strela.csrs.in1_stride, strela.csrs.in1_count), strela_dev->regs.strela_in1_size);
+			iowrite32(strela_dev->alloc_info[strela.src_buff_id].dmaptr + strela.csrs.in2_offs * 4U, strela_dev->regs.strela_in2_addr);
+			iowrite32(STRELA_IN_BITS_STRIDE_COUNT(strela.csrs.in2_stride, strela.csrs.in2_count), strela_dev->regs.strela_in2_size);
+			iowrite32(strela_dev->alloc_info[strela.src_buff_id].dmaptr + strela.csrs.in3_offs * 4U, strela_dev->regs.strela_in3_addr);
+			iowrite32(STRELA_IN_BITS_STRIDE_COUNT(strela.csrs.in3_stride, strela.csrs.in3_count), strela_dev->regs.strela_in3_size);
 
 			//dev_info(strela_dev->miscdev.parent, "Setting values for OUT registers\n");
 
-			iowrite32(strela_dev->dmaptr + strela_csrs.out0_offs * 4U, strela_dev->regs.strela_out0_addr);
-			iowrite32(strela_csrs.out0_count * 4U, strela_dev->regs.strela_out0_size);
-			iowrite32(strela_dev->dmaptr + strela_csrs.out1_offs * 4U, strela_dev->regs.strela_out1_addr);
-			iowrite32(strela_csrs.out1_count * 4U, strela_dev->regs.strela_out1_size);
-			iowrite32(strela_dev->dmaptr + strela_csrs.out2_offs * 4U, strela_dev->regs.strela_out2_addr);
-			iowrite32(strela_csrs.out2_count * 4U, strela_dev->regs.strela_out2_size);
-			iowrite32(strela_dev->dmaptr + strela_csrs.out3_offs * 4U, strela_dev->regs.strela_out3_addr);
-			iowrite32(strela_csrs.out3_count * 4U, strela_dev->regs.strela_out3_size);
+			iowrite32(strela_dev->alloc_info[strela.dst_buff_id].dmaptr + strela.csrs.out0_offs * 4U, strela_dev->regs.strela_out0_addr);
+			iowrite32(strela.csrs.out0_count * 4U, strela_dev->regs.strela_out0_size);
+			iowrite32(strela_dev->alloc_info[strela.dst_buff_id].dmaptr + strela.csrs.out1_offs * 4U, strela_dev->regs.strela_out1_addr);
+			iowrite32(strela.csrs.out1_count * 4U, strela_dev->regs.strela_out1_size);
+			iowrite32(strela_dev->alloc_info[strela.dst_buff_id].dmaptr + strela.csrs.out2_offs * 4U, strela_dev->regs.strela_out2_addr);
+			iowrite32(strela.csrs.out2_count * 4U, strela_dev->regs.strela_out2_size);
+			iowrite32(strela_dev->alloc_info[strela.dst_buff_id].dmaptr + strela.csrs.out3_offs * 4U, strela_dev->regs.strela_out3_addr);
+			iowrite32(strela.csrs.out3_count * 4U, strela_dev->regs.strela_out3_size);
 
 			iowrite32(1U, strela_dev->regs.strela_out_arb_hold);
 
@@ -202,7 +299,22 @@ static int strela_mmap(struct file *fp, struct vm_area_struct *vma)
 
     vm_flags_set(vma, VM_IO);
 
-	ret = dma_mmap_coherent(strela_dev->miscdev.parent, vma, strela_dev->vptr , strela_dev->dmaptr, vma->vm_end - vma->vm_start);
+	u8 buff_id = vma->vm_pgoff; // page offset used to pass buffer ID from user space
+
+
+	if(buff_id >= STRELA_MAX_ALLOC_BUFFS) {
+		dev_err(strela_dev->miscdev.parent, "STRELA: Invalid memory map request, check buffer ID\n");
+
+		return -EINVAL;
+	}
+
+	if(strela_dev->alloc_info[buff_id].size == 0) {
+		dev_err(strela_dev->miscdev.parent, "STRELA: Invalid memory map request, trying to memory map unallocated buffer\n");
+
+		return -EINVAL;
+	}
+
+	ret = dma_mmap_coherent(strela_dev->miscdev.parent, vma, strela_dev->alloc_info[buff_id].vptr , strela_dev->alloc_info[buff_id].dmaptr, vma->vm_end - vma->vm_start);
 
     return ret;
 }
@@ -311,15 +423,6 @@ static int strela_probe(struct platform_device *pdev)
 
 	dev_set_drvdata(dev, strela_dev);
 
-	// allocate a region for STRELA's read/write operations
-	strela_dev->vptr = dma_alloc_coherent(dev, STRELA_DATA_REGION_SIZE, &strela_dev->dmaptr, GFP_KERNEL);
-
-	if (!strela_dev->vptr) {
-		return -ENOMEM;
-	}
-
-	dev_info(dev, "STRELA device after dma_alloc_coherent values of vptr: %llx and dma_addr: %llx\n", strela_dev->vptr, strela_dev->dmaptr);
-
 	dev_info(dev, "Registering STRELA device\n");
 
 	return 0;
@@ -334,12 +437,6 @@ static int strela_probe(struct platform_device *pdev)
 
 static int strela_remove(struct platform_device *pdev)
 {
-	struct strela_device *strela_dev = NULL;
-
-	strela_dev = (struct strela_device*) dev_get_drvdata(&pdev->dev);
-
-	dma_free_coherent(&pdev->dev, STRELA_DATA_REGION_SIZE, strela_dev->vptr, strela_dev->dmaptr);
-
 	return 0;
 };
 
