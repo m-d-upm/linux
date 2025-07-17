@@ -78,4 +78,8 @@ source "drivers/staging/qlge/Kconfig"
 
 source "drivers/staging/vme_user/Kconfig"
 
+source "drivers/staging/u-dma-buf/Kconfig"
+
+source "drivers/staging/accel_dyn_cma/Kconfig"
+
 endif # STAGING
