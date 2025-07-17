@@ -5,8 +5,6 @@
  * Copyright (C) 2025 Milos Dordevic, CEI-UPM.
  */
 
-#include <linux/module.h>
-#include <linux/kernel.h>
 #include <linux/of_platform.h>
 #include <linux/bitfield.h>
 #include <linux/cdev.h>
