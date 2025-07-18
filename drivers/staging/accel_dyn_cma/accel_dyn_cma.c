@@ -19,7 +19,7 @@
 #define ACCEL_DYN_CMA_DRV_NAME "accel_dyn_cma"
 #define ACCEL_DYN_CMA_MAX_NUM_BUFS (8)
 
-struct strela_dma_alloc_info {
+struct accel_dyn_cma_alloc_info {
 	struct device *buf_dev;
 	u32 size;
 };
@@ -36,65 +36,23 @@ static int interface_minor = -1;
 
 static struct accel_dyn_cma_dev_info accel_dyn_cma_dev = {0};
 
-static void __exit accel_dyn_cma_exit(void)
-{
-	cdev_del(&accel_dyn_cma_dev.cdev);
-	unregister_chrdev_region(MKDEV(interface_major, interface_minor), 1);
-}
-
-static int __init accel_dyn_cma_init(void)
-{
-	dev_t dev_num = 0;
-	int result = 0;
-
-	result = alloc_chrdev_region(&dev_num, 0, 1, ACCEL_DYN_CMA_DRV_NAME);
-	
-	if (result < 0) {
-		pr_warn("accel_dyn_cma_dev: failed to allocate character device region\n");
-		goto fail;
-	}
-
-	interface_major = MAJOR(dev_num);
-	interface_minor = MINOR(dev_num);
-
-	// Init cdev and add it to the system
-	cdev_init(&accel_dyn_cma_dev.cdev, &accel_dyn_cma_fops);
-	accel_dyn_cma_dev.cdev.owner = THIS_MODULE;
-	accel_dyn_cma_dev.cdev.ops = &accel_dyn_cma_fops;
-	result = cdev_add(&ioctl_d_interface.cdev, dev_num, 1);
-
-	if (result < 0) {
-		pr_warn( "accel_dyn_cma_dev: error when adding device\n");
-		goto fail;
-	}
-
-	pr_info("accel_dyn_cma: module loaded\n");
-	return 0;
-
-fail:
-	cdev_del(&accel_dyn_cma_dev.cdev);
-	unregister_chrdev_region(MKDEV(interface_major, interface_minor), 1);
-	
-	return result;
-}
-
 int accel_dyn_cma_open(struct inode* inode, struct file* filp)
 {
 	struct accel_dyn_cma_dev_info* accel_dyn_cma_dev;
 
-	accel_dyn_cma_dev = container_of(inode->i_cdev, accel_dyn_cma_dev_info, cdev);
+	accel_dyn_cma_dev = container_of(inode->i_cdev, struct accel_dyn_cma_dev_info, cdev);
 	filp->private_data = accel_dyn_cma_dev;
 
 	return 0;
 }
 
+
 long accel_dyn_cma_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 {
 	long res = 0;
 	struct accel_dyn_cma_alloc_req_ioctl_arg alloc_req;
-    u8 id;
 
-	struct accel_dyn_cma_dev_info *accel_dyn_cma_dev = (accel_dyn_cma_dev_info*) filp->private_data;
+	struct accel_dyn_cma_dev_info *accel_dyn_cma_dev = (struct accel_dyn_cma_dev_info*) filp->private_data;
 
 	mutex_lock(&accel_dyn_cma_dev->lock);
 
@@ -159,7 +117,7 @@ long accel_dyn_cma_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 		case ACCEL_DYN_CMA_IOCTL_FREE: {
 	    	int id = 0;
 
-			if (copy_from_user(&id, (void __user *)ioctl_param, sizeof(int))) {
+			if (copy_from_user(&id, (void __user *)arg, sizeof(int))) {
 				pr_err("accel_dyn_cma: copying of buffer ID from user space failed\n");
 
 				res = -EFAULT;
@@ -182,8 +140,6 @@ long accel_dyn_cma_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 
 				goto ioctl_fail;
 			}
-
-			dma_free_coherent(strela_dev->miscdev.parent, strela_dev->alloc_info[id].size, strela_dev->alloc_info[id].vptr, strela_dev->alloc_info[id].dmaptr);
 
 			res = u_dma_buf_device_remove(accel_dyn_cma_dev->alloc_info[id].buf_dev);
 			
@@ -220,6 +176,48 @@ struct file_operations accel_dyn_cma_fops = {
 	.unlocked_ioctl = accel_dyn_cma_ioctl,
 	.release = NULL
 };
+
+static void __exit accel_dyn_cma_exit(void)
+{
+	cdev_del(&accel_dyn_cma_dev.cdev);
+	unregister_chrdev_region(MKDEV(interface_major, interface_minor), 1);
+}
+
+static int __init accel_dyn_cma_init(void)
+{
+	dev_t dev_num = 0;
+	int result = 0;
+
+	result = alloc_chrdev_region(&dev_num, 0, 1, ACCEL_DYN_CMA_DRV_NAME);
+	
+	if (result < 0) {
+		pr_warn("accel_dyn_cma_dev: failed to allocate character device region\n");
+		goto fail;
+	}
+
+	interface_major = MAJOR(dev_num);
+	interface_minor = MINOR(dev_num);
+
+	// Init cdev and add it to the system
+	cdev_init(&accel_dyn_cma_dev.cdev, &accel_dyn_cma_fops);
+	accel_dyn_cma_dev.cdev.owner = THIS_MODULE;
+	accel_dyn_cma_dev.cdev.ops = &accel_dyn_cma_fops;
+	result = cdev_add(&accel_dyn_cma_dev.cdev, dev_num, 1);
+
+	if (result < 0) {
+		pr_warn( "accel_dyn_cma_dev: error when adding device\n");
+		goto fail;
+	}
+
+	pr_info("accel_dyn_cma: module loaded\n");
+	return 0;
+
+fail:
+	cdev_del(&accel_dyn_cma_dev.cdev);
+	unregister_chrdev_region(MKDEV(interface_major, interface_minor), 1);
+	
+	return result;
+}
 
 module_init(accel_dyn_cma_init);
 module_exit(accel_dyn_cma_exit);
