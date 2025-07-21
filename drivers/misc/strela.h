@@ -88,9 +88,15 @@ struct strela_csrs {
     u32 out3_count;
 };
 
+struct strela_ctrl {
+    int in_buf_id;
+    int out_buf_id;
+    struct strela_csrs csrs;
+};
+
 #define IOCTL_BASE 'W'
 
-#define IOCTL_STRELA_CONTROL	_IOW(IOCTL_BASE, 1, struct strela_csrs)
+#define IOCTL_STRELA_CONTROL	_IOW(IOCTL_BASE, 1, struct strela_ctrl)
 #define IOCTL_STRELA_CONFIG 	_IO(IOCTL_BASE, 2)
 #define IOCTL_STRELA_EXEC	    _IO(IOCTL_BASE, 3)
 
