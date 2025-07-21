@@ -17,6 +17,7 @@
 #include "accel_dyn_cma.h"
 
 #define ACCEL_DYN_CMA_DRV_NAME "accel_dyn_cma"
+
 #define ACCEL_DYN_CMA_MAX_NUM_BUFS (8)
 
 struct accel_dyn_cma_alloc_info {
@@ -202,7 +203,7 @@ static int __init accel_dyn_cma_init(void)
 
     accel_dyn_cma_dev.accel_dyn_cma_dev_class = class_create(ACCEL_DYN_CMA_DRV_NAME);
 
-	if(accel_dyn_cma_dev.accel_dyn_cma_dev_class) {
+	if(IS_ERR_OR_NULL(accel_dyn_cma_dev.accel_dyn_cma_dev_class)) {
 		pr_warn( "accel_dyn_cma_dev: error when creating device class\n");
 
 		goto failed_creating_class;
@@ -219,7 +220,7 @@ static int __init accel_dyn_cma_init(void)
 		goto failed_adding_device;
 	}
 
-	struct device *dev = device_create(accel_dyn_cma_dev.accel_dyn_cma_dev_class, NULL, accel_dyn_cma_dev.dev_num, NULL, "accel_dyn_cma_dev");
+	struct device *dev = device_create(accel_dyn_cma_dev.accel_dyn_cma_dev_class, NULL, accel_dyn_cma_dev.dev_num, NULL, ACCEL_DYN_CMA_DRV_NAME);
 
 	if(IS_ERR_OR_NULL(dev)) {
 		pr_warn( "accel_dyn_cma_dev: error when creating device\n");
