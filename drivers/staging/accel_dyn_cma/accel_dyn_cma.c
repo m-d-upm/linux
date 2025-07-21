@@ -200,7 +200,7 @@ static int __init accel_dyn_cma_init(void)
 	accel_dyn_cma_dev.interface_major = MAJOR(accel_dyn_cma_dev.dev_num);
 	accel_dyn_cma_dev.interface_minor = MINOR(accel_dyn_cma_dev.dev_num);
 
-    accel_dyn_cma_dev.accel_dyn_cma_dev_class = class_create(THIS_MODULE, ACCEL_DYN_CMA_DRV_NAME);
+    accel_dyn_cma_dev.accel_dyn_cma_dev_class = class_create(ACCEL_DYN_CMA_DRV_NAME);
 
 	if(accel_dyn_cma_dev.accel_dyn_cma_dev_class) {
 		pr_warn( "accel_dyn_cma_dev: error when creating device class\n");
@@ -219,7 +219,7 @@ static int __init accel_dyn_cma_init(void)
 		goto failed_adding_device;
 	}
 
-	strut device *dev = device_create(accel_dyn_cma_dev.accel_dyn_cma_dev_class, NULL, accel_dyn_cma_dev.dev_num, NULL, "accel_dyn_cma_dev");
+	struct device *dev = device_create(accel_dyn_cma_dev.accel_dyn_cma_dev_class, NULL, accel_dyn_cma_dev.dev_num, NULL, "accel_dyn_cma_dev");
 
 	if(IS_ERR_OR_NULL(dev)) {
 		pr_warn( "accel_dyn_cma_dev: error when creating device\n");
