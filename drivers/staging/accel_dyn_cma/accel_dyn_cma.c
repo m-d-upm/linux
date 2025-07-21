@@ -26,13 +26,14 @@ struct accel_dyn_cma_alloc_info {
 
 struct accel_dyn_cma_dev_info {
 	struct cdev cdev;
+	dev_t dev_num;
+	struct class *accel_dyn_cma_dev_class;
+	int interface_major;
+	int interface_minor;
 	// buffer IDs correspond to the index into the array
 	struct accel_dyn_cma_alloc_info alloc_info[ACCEL_DYN_CMA_MAX_NUM_BUFS];
 	struct mutex lock;
 };
-
-static int interface_major = -1;
-static int interface_minor = -1;
 
 static struct accel_dyn_cma_dev_info accel_dyn_cma_dev = {0};
 
@@ -45,7 +46,6 @@ int accel_dyn_cma_open(struct inode* inode, struct file* filp)
 
 	return 0;
 }
-
 
 long accel_dyn_cma_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 {
@@ -83,7 +83,7 @@ long accel_dyn_cma_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 				goto ioctl_fail;
 			}
 			else {
-				accel_dyn_cma_dev->alloc_info[free_buff_id].buf_dev = u_dma_buf_device_create(NULL, free_buff_id, alloc_req.size, 0, &accel_dyn_cma_dev->cdev);
+				accel_dyn_cma_dev->alloc_info[free_buff_id].buf_dev = u_dma_buf_device_create(NULL, free_buff_id, alloc_req.size, 0, NULL);
 
 				if(IS_ERR_OR_NULL(accel_dyn_cma_dev->alloc_info[free_buff_id].buf_dev)) {
 					pr_err("accel_dyn_cma: error when creating buffer\n");
@@ -179,43 +179,64 @@ struct file_operations accel_dyn_cma_fops = {
 
 static void __exit accel_dyn_cma_exit(void)
 {
+	device_destroy(accel_dyn_cma_dev.accel_dyn_cma_dev_class, accel_dyn_cma_dev.dev_num);
+    class_unregister(accel_dyn_cma_dev.accel_dyn_cma_dev_class);
+    class_destroy(accel_dyn_cma_dev.accel_dyn_cma_dev_class);
 	cdev_del(&accel_dyn_cma_dev.cdev);
-	unregister_chrdev_region(MKDEV(interface_major, interface_minor), 1);
+	unregister_chrdev_region(accel_dyn_cma_dev.dev_num, 1);
 }
 
 static int __init accel_dyn_cma_init(void)
 {
-	dev_t dev_num = 0;
 	int result = 0;
 
-	result = alloc_chrdev_region(&dev_num, 0, 1, ACCEL_DYN_CMA_DRV_NAME);
+	result = alloc_chrdev_region(&accel_dyn_cma_dev.dev_num, 0, 1, ACCEL_DYN_CMA_DRV_NAME);
 	
-	if (result < 0) {
+	if (result) {
 		pr_warn("accel_dyn_cma_dev: failed to allocate character device region\n");
 		goto fail;
 	}
 
-	interface_major = MAJOR(dev_num);
-	interface_minor = MINOR(dev_num);
+	accel_dyn_cma_dev.interface_major = MAJOR(accel_dyn_cma_dev.dev_num);
+	accel_dyn_cma_dev.interface_minor = MINOR(accel_dyn_cma_dev.dev_num);
+
+    accel_dyn_cma_dev.accel_dyn_cma_dev_class = class_create(THIS_MODULE, ACCEL_DYN_CMA_DRV_NAME);
+
+	if(accel_dyn_cma_dev.accel_dyn_cma_dev_class) {
+		pr_warn( "accel_dyn_cma_dev: error when creating device class\n");
+
+		goto failed_creating_class;
+	}
 
 	// Init cdev and add it to the system
 	cdev_init(&accel_dyn_cma_dev.cdev, &accel_dyn_cma_fops);
 	accel_dyn_cma_dev.cdev.owner = THIS_MODULE;
 	accel_dyn_cma_dev.cdev.ops = &accel_dyn_cma_fops;
-	result = cdev_add(&accel_dyn_cma_dev.cdev, dev_num, 1);
+	result = cdev_add(&accel_dyn_cma_dev.cdev, accel_dyn_cma_dev.dev_num, 1);
 
-	if (result < 0) {
+	if (result) {
 		pr_warn( "accel_dyn_cma_dev: error when adding device\n");
-		goto fail;
+		goto failed_adding_device;
+	}
+
+	strut device *dev = device_create(accel_dyn_cma_dev.accel_dyn_cma_dev_class, NULL, accel_dyn_cma_dev.dev_num, NULL, "accel_dyn_cma_dev");
+
+	if(IS_ERR_OR_NULL(dev)) {
+		pr_warn( "accel_dyn_cma_dev: error when creating device\n");
+		goto failed_creating_device;
 	}
 
 	pr_info("accel_dyn_cma: module loaded\n");
 	return 0;
 
-fail:
+failed_creating_device:
 	cdev_del(&accel_dyn_cma_dev.cdev);
-	unregister_chrdev_region(MKDEV(interface_major, interface_minor), 1);
-	
+failed_adding_device:
+	//class_unregister(accel_dyn_cma_dev.accel_dyn_cma_dev_class);
+    class_destroy(accel_dyn_cma_dev.accel_dyn_cma_dev_class);
+failed_creating_class:
+	unregister_chrdev_region(accel_dyn_cma_dev.dev_num, 1);
+fail:
 	return result;
 }
 
