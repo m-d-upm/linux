@@ -36,6 +36,9 @@ struct accel_dyn_cma_dev_info {
 	struct mutex lock;
 };
 
+struct device*   u_dma_buf_device_create(const char* name, int id, size_t size, u64 option, struct device* parent);
+int              u_dma_buf_device_remove(struct device *dev);
+
 static struct accel_dyn_cma_dev_info accel_dyn_cma_dev = {0};
 
 int accel_dyn_cma_open(struct inode* inode, struct file* filp)
