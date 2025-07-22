@@ -13,6 +13,7 @@
 #include <linux/ioctl.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
+#include <linux/platform_device.h>
 
 #include "accel_dyn_cma.h"
 
@@ -87,7 +88,18 @@ long accel_dyn_cma_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 				goto ioctl_fail;
 			}
 			else {
-				accel_dyn_cma_dev->alloc_info[free_buff_id].buf_dev = u_dma_buf_device_create(NULL, free_buff_id, alloc_req.size, 0, NULL);
+				// search platform bus by device name to find a device to bind to
+				struct device *parent_dev =	bus_find_device_by_name(&platform_bus_type, NULL, alloc_req.dev_name);
+
+				if(IS_ERR_OR_NULL(parent_dev)) {
+					pr_err("accel_dyn_cma: error when searching for a device to bind the buffer to, check the provided device name\n");
+		
+					res = -EFAULT;
+
+					goto ioctl_fail;
+				}
+
+				accel_dyn_cma_dev->alloc_info[free_buff_id].buf_dev = u_dma_buf_device_create(NULL, free_buff_id, alloc_req.size, 0, parent_dev);
 
 				if(IS_ERR_OR_NULL(accel_dyn_cma_dev->alloc_info[free_buff_id].buf_dev)) {
 					pr_err("accel_dyn_cma: error when creating buffer\n");
