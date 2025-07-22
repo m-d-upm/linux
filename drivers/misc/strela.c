@@ -65,7 +65,7 @@ struct buf_info {
 	void *vptr;
 	dma_addr_t dmaptr;
 	size_t size;
-}
+};
 
 struct strela_device {
 	struct miscdevice miscdev;
@@ -127,14 +127,14 @@ static long strela_ioctl(struct file *fp, unsigned int ioctl_num, unsigned long 
 			struct buf_info in_buf_info;
 			struct buf_info out_buf_info;
 
-			if(u_dma_buf_device_getmap(in_buf_dev, &in_buf_info.size, &in_buf_info.vptr, &in_buf_info.dmaptr) {
+			if(u_dma_buf_device_getmap(in_buf_dev, &in_buf_info.size, &in_buf_info.vptr, &in_buf_info.dmaptr)) {
 				dev_err(strela_dev->miscdev.parent, "STRELA: Failed to obtain input buffer address map\n");
 
 				ret = -EFAULT;
 				goto ioctl_fail;
 			}
 
-			if(u_dma_buf_device_getmap(out_buf_dev, &out_buf_info.size, &out_buf_info.vptr, &out_buf_info.dmaptr) {
+			if(u_dma_buf_device_getmap(out_buf_dev, &out_buf_info.size, &out_buf_info.vptr, &out_buf_info.dmaptr)) {
 				dev_err(strela_dev->miscdev.parent, "STRELA: Failed to obtain output buffer address map\n");
 
 				ret = -EFAULT;
