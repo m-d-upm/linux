@@ -13,7 +13,7 @@
 struct accel_dyn_cma_alloc_req_ioctl_arg {
     u32 size;
     int id;
-    char *dev_name; // used so that the buffer can be bound to a specific device
+    char dev_name[16]; // used so that the buffer can be bound to a specific device
 };
 
 #define ACCEL_DYN_CMA_IOCTL_BASE 'V'
