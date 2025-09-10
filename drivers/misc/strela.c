@@ -28,6 +28,9 @@
 #define STRELA_CONF_TIMEOUT			(5) // seconds
 #define STRELA_TIMEOUT				(30) // seconds
 
+#define STRELA_MAX_DEV_SUPPORTED	(4) // number of devices supported by this driver
+
+// declared here, defined in udmabuf driver
 struct device*   u_dma_buf_device_search(const char* name, int id);
 int              u_dma_buf_device_getmap(struct device *dev, size_t* size, void** virt_addr, dma_addr_t* phys_addr);
 
@@ -254,17 +257,32 @@ static int strela_probe(struct platform_device *pdev)
 
 	int ret = 0;
 
+	static int strela_dev_num = 0;
+	char strela_dev_name[10];
+
+	if (strela_dev_num >= STRELA_MAX_DEV_SUPPORTED)
+	{
+		dev_err(dev, "STRELA: Maximum number of devices supported by the driver reached\n");
+		return -ENOMEM;
+	}
+
 	// allocate memory for the STRELA device
 	strela_dev = devm_kzalloc(dev, sizeof(struct strela_device), GFP_KERNEL);
 
 	if (!strela_dev)
+	{
+		dev_err(dev, "STRELA: Failed to acquire resources for allocating memory for STRELA device\n");
 		return -ENOMEM;
+	}
+
+    snprintf(strela_dev_name, sizeof(strela_dev_name), "strela%d", strela_dev_num);
+	++strela_dev_num;
 
 	// configure STRELA dev representation
 	strela_dev->miscdev.fops = &strela_fops;
 	strela_dev->miscdev.parent = dev;
 	strela_dev->miscdev.minor = MISC_DYNAMIC_MINOR;
-	strela_dev->miscdev.name = "strela";
+	strela_dev->miscdev.name = strela_dev_name;
 
 	mutex_init(&strela_dev->lock);
 
@@ -272,7 +290,7 @@ static int strela_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
 	if (!res) {
-		dev_err(dev, "STRELA: Failed to acquire resources for register to kernel memory mapping\n");
+		dev_err(dev, "STRELA: Failed to acquire resources for register-to-kernel memory mapping\n");
 		return -EINVAL;
 	}
 
@@ -355,6 +373,8 @@ static int strela_probe(struct platform_device *pdev)
 
 static int strela_remove(struct platform_device *pdev)
 {
+	// driver not removed during the runtime of the system
+
 	return 0;
 };
 
