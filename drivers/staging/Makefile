@@ -28,3 +28,5 @@ obj-$(CONFIG_PI433)		+= pi433/
 obj-$(CONFIG_XIL_AXIS_FIFO)	+= axis-fifo/
 obj-$(CONFIG_FIELDBUS_DEV)     += fieldbus/
 obj-$(CONFIG_QLGE)		+= qlge/
+obj-$(CONFIG_U_DMA_BUF) 	+= u-dma-buf/
+obj-$(CONFIG_ACCEL_DYN_CMA) 	+= accel_dyn_cma/

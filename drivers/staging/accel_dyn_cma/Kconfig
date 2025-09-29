@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# "Driver that provides dynamic CMA using u-dma-buf for accelerators that require CM to perform DMA transactions"
+#
+config ACCEL_DYN_CMA
+	bool "Enables alloc/free IOCTL interface that relies on u-dma-buf"
+	depends on U_DMA_BUF_CONFIG
+	default n
+	help
+	  Adds functionality similar to malloc/free on top of u-dma-buf and enables
+	  dynamic allocation and deallocation of contiguous memory buffers for DMA 
+	  that can be mapped to user space and shared between processes/threads and even between
+	  different accelerators.
