@@ -11,14 +11,18 @@
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
-#define STRELA_CTRL_BIT_START_EXEC    	(0x1U)
-#define STRELA_CTRL_BIT_CLEAR_STATE   	(0x2U)
+#define STRELA_CTRL_BIT_START_EXEC    	    (0x1U)
+#define STRELA_CTRL_BIT_CLEAR_STATE   	    (0x2U)
 
-#define STRELA_CTRL_BIT_LOAD_CONFIG   	(0x4U)
-#define STRELA_CTRL_BIT_CLEAR_CONFIG	(0x8U)
+#define STRELA_CTRL_BIT_LOAD_CONFIG   	    (0x4U)
+#define STRELA_CTRL_BIT_CLEAR_CONFIG	    (0x8U)
+#define STRELA_CTRL_BIT_CLEAR_INT_CONFIG    (0x10U)
+#define STRELA_CTRL_BIT_CLEAR_INT_EXEC	    (0x20U)
 
-#define STRELA_CTRL_BIT_DONE_CONFIG	    (0x2U)
-#define STRELA_CTRL_BIT_DONE_EXEC	    (0x1U)
+#define STRELA_CTRL_BIT_DONE_CONFIG	        (0x2U)
+#define STRELA_CTRL_BIT_DONE_EXEC	        (0x1U)
+#define STRELA_CTRL_BIT_PENDING_INT_CONFIG	(0x4U)
+#define STRELA_CTRL_BIT_PENDING_INT_EXEC	(0x8U)
 
 #define STRELA_IN_BITS_STRIDE_COUNT(stride, count)  ( (stride << 16U) | (stride * count) )
 #define STRELA_OUT_BITS_STRIDE4_COUNT(count)        ( count * 4U )

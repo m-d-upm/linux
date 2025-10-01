@@ -22,6 +22,9 @@
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
 #include <linux/jiffies.h>
+#include <linux/irq.h>
+#include <linux/interrupt.h>
+#include <linux/wait.h>
 
 #include "strela.h"
 
@@ -75,6 +78,10 @@ struct strela_device {
 	void __iomem *reg;
 	struct strela_reg_addr_map regs;
 	struct mutex lock;
+	wait_queue_head_t wq_conf;
+	wait_queue_head_t wq_exec;
+	bool wake_up_int_conf;
+	bool wake_up_int_exec;
 };
 
 static int strela_open(struct inode *inode, struct file *fp)
@@ -192,6 +199,7 @@ static long strela_ioctl(struct file *fp, unsigned int ioctl_num, unsigned long 
 			// start config read
 			iowrite32(STRELA_CTRL_BIT_LOAD_CONFIG, strela_dev->regs.strela_ctrl);
 
+			/*
 			end_jiffies = jiffies + STRELA_CONF_TIMEOUT * HZ;
 
 			// wait for it to finish
@@ -202,6 +210,10 @@ static long strela_ioctl(struct file *fp, unsigned int ioctl_num, unsigned long 
 				}
 				cpu_relax();
 			} while (!(ioread32(strela_dev->regs.strela_ctrl) & STRELA_CTRL_BIT_DONE_CONFIG));
+			*/
+
+			ret = wait_event_interruptible(strela_dev->wq_conf, strela_dev->wake_up_int_conf == true);
+			strela_dev->wake_up_int_conf = false;
 
 			//dev_info(strela_dev->miscdev.parent, "New config loaded into STRELA\n");
 
@@ -216,6 +228,7 @@ static long strela_ioctl(struct file *fp, unsigned int ioctl_num, unsigned long 
 			// start execution
 			iowrite32(STRELA_CTRL_BIT_START_EXEC, strela_dev->regs.strela_ctrl);
 
+			/*
 			end_jiffies = jiffies + STRELA_TIMEOUT * HZ;
 
 			// wait for it to finish
@@ -226,6 +239,10 @@ static long strela_ioctl(struct file *fp, unsigned int ioctl_num, unsigned long 
 				}
 				cpu_relax();
 			} while (!(ioread32(strela_dev->regs.strela_ctrl) & STRELA_CTRL_BIT_DONE_EXEC));
+			*/
+			
+			ret = wait_event_interruptible(strela_dev->wq_exec, strela_dev->wake_up_int_exec == true);
+			strela_dev->wake_up_int_exec = false;
 
 			// TO-DO: flush data L1 cache either here or in user-space library
 
@@ -239,6 +256,58 @@ ioctl_fail:
 	mutex_unlock(&strela_dev->lock);
 
 	return ret;
+}
+
+static irqreturn_t strela_conf_process(int irq, void *data)
+{
+	struct strela_device *strela_dev = (struct strela_device *)data;
+	u32 status_reg = ioread32(strela_dev->regs.strela_ctrl);
+	
+	iowrite32(STRELA_CTRL_BIT_CLEAR_INT_CONFIG, strela_dev->regs.strela_ctrl);
+
+	strela_dev->wake_up_int_conf = true;
+	wake_up_interruptible(&strela_dev->wq_conf);
+
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t strela_conf_irq_check(int irq, void *data)
+{
+	struct strela_device *strela_dev = (struct strela_device *)data;
+	u32 status_reg = ioread32(strela_dev->regs.strela_ctrl);
+
+	if (status_reg & STRELA_CTRL_BIT_PENDING_INT_CONFIG)
+	{
+		return IRQ_WAKE_THREAD;
+	}
+
+	return IRQ_NONE;
+}
+
+static irqreturn_t strela_exec_process(int irq, void *data)
+{
+	struct strela_device *strela_dev = (struct strela_device *)data;
+	u32 status_reg = ioread32(strela_dev->regs.strela_ctrl);
+	
+	iowrite32(STRELA_CTRL_BIT_CLEAR_INT_EXEC, strela_dev->regs.strela_ctrl);
+
+	strela_dev->wake_up_int_exec = true;
+	wake_up_interruptible(&strela_dev->wq_exec);
+
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t strela_exec_irq_check(int irq, void *data)
+{
+	struct strela_device *strela_dev = (struct strela_device *)data;
+	u32 status_reg = ioread32(strela_dev->regs.strela_ctrl);
+
+	if (status_reg & STRELA_CTRL_BIT_PENDING_INT_EXEC)
+	{
+		return IRQ_WAKE_THREAD;
+	}
+
+	return IRQ_NONE;
 }
 
 static const struct file_operations strela_fops = {
@@ -256,6 +325,9 @@ static int strela_probe(struct platform_device *pdev)
 	struct resource *res = NULL;
 
 	int ret = 0;
+
+	int irq_conf = -1;
+	int irq_exec = -1;
 
 	static int strela_dev_num = 0;
 	char strela_dev_name[10];
@@ -285,7 +357,9 @@ static int strela_probe(struct platform_device *pdev)
 	strela_dev->miscdev.name = strela_dev_name;
 
 	mutex_init(&strela_dev->lock);
-
+	init_waitqueue_head(&strela_dev->wq_conf);
+	init_waitqueue_head(&strela_dev->wq_exec);
+	
 	// map regmap to kernel memory
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
@@ -358,6 +432,38 @@ static int strela_probe(struct platform_device *pdev)
 	}
 
 	dev_set_drvdata(dev, strela_dev);
+
+	irq_conf = platform_get_irq_byname_optional(pdev, "config_done");
+	if (irq_conf > 0)
+	{
+		dev_info(dev, "requesting config loading completed IRQ: %d\n", irq_conf);
+
+		if (request_threaded_irq(irq_conf, strela_conf_irq_check, strela_conf_process, IRQF_ONESHOT | IRQF_SHARED, dev_name(dev), strela_dev)) 
+		{
+			dev_err(dev, "failure when requesting IRQ %d for config loading completed events\n", irq_conf);
+			goto fail;
+		}
+	}
+	else {
+		dev_err(dev, "no IRQ provided for config loading completed events\n");
+		goto fail;
+	}
+
+	irq_exec = platform_get_irq_byname_optional(pdev, "config_exec");
+	if (irq_exec > 0)
+	{
+		dev_info(dev, "requesting execution completed IRQ: %d\n", irq_exec);
+
+		if (request_threaded_irq(irq_exec, strela_conf_irq_check, strela_conf_process, IRQF_ONESHOT | IRQF_SHARED, dev_name(dev), strela_dev)) 
+		{
+			dev_err(dev, "failure when requesting IRQ %d for execution completed events\n", irq_exec);
+			goto fail;
+		}
+	}
+	else {
+		dev_err(dev, "no IRQ provided for execution completed events\n");
+		goto fail;
+	}
 
 	dev_info(dev, "Registering STRELA device\n");
 
