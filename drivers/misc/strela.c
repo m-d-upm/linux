@@ -447,7 +447,7 @@ static int strela_probe(struct platform_device *pdev)
 		goto fail;
 	}
 
-	irq_exec = platform_get_irq_byname_optional(pdev, "config_exec");
+	irq_exec = platform_get_irq_byname_optional(pdev, "exec_done");
 	if (irq_exec > 0)
 	{
 		dev_info(dev, "requesting execution completed IRQ: %d\n", irq_exec);
