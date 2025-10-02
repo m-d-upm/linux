@@ -261,7 +261,6 @@ ioctl_fail:
 static irqreturn_t strela_conf_process(int irq, void *data)
 {
 	struct strela_device *strela_dev = (struct strela_device *)data;
-	u32 status_reg = ioread32(strela_dev->regs.strela_ctrl);
 	
 	iowrite32(STRELA_CTRL_BIT_CLEAR_INT_CONFIG, strela_dev->regs.strela_ctrl);
 
@@ -287,7 +286,6 @@ static irqreturn_t strela_conf_irq_check(int irq, void *data)
 static irqreturn_t strela_exec_process(int irq, void *data)
 {
 	struct strela_device *strela_dev = (struct strela_device *)data;
-	u32 status_reg = ioread32(strela_dev->regs.strela_ctrl);
 	
 	iowrite32(STRELA_CTRL_BIT_CLEAR_INT_EXEC, strela_dev->regs.strela_ctrl);
 
@@ -454,7 +452,7 @@ static int strela_probe(struct platform_device *pdev)
 	{
 		dev_info(dev, "requesting execution completed IRQ: %d\n", irq_exec);
 
-		if (request_threaded_irq(irq_exec, strela_conf_irq_check, strela_conf_process, IRQF_ONESHOT | IRQF_SHARED, dev_name(dev), strela_dev)) 
+		if (request_threaded_irq(irq_exec, strela_exec_irq_check, strela_exec_process, IRQF_ONESHOT | IRQF_SHARED, dev_name(dev), strela_dev)) 
 		{
 			dev_err(dev, "failure when requesting IRQ %d for execution completed events\n", irq_exec);
 			goto fail;
