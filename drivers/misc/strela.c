@@ -277,8 +277,12 @@ static irqreturn_t strela_conf_irq_check(int irq, void *data)
 
 	if (status_reg & STRELA_CTRL_BIT_PENDING_INT_CONFIG)
 	{
+		dev_info(strela_dev->miscdev.parent, "IRQ: %d handled for dev: %s\n", irq, dev_name(strela_dev->miscdev.parent));
+
 		return IRQ_WAKE_THREAD;
 	}
+
+	dev_info(strela_dev->miscdev.parent, "IRQ: %d was not for dev: %s\n", irq, dev_name(strela_dev->miscdev.parent));
 
 	return IRQ_NONE;
 }
@@ -302,8 +306,12 @@ static irqreturn_t strela_exec_irq_check(int irq, void *data)
 
 	if (status_reg & STRELA_CTRL_BIT_PENDING_INT_EXEC)
 	{
+		dev_info(strela_dev->miscdev.parent, "IRQ: %d handled for dev: %s\n", irq, dev_name(strela_dev->miscdev.parent));
+
 		return IRQ_WAKE_THREAD;
 	}
+
+	dev_info(strela_dev->miscdev.parent, "IRQ: %d was not for dev: %s\n", irq, dev_name(strela_dev->miscdev.parent));
 
 	return IRQ_NONE;
 }
@@ -439,12 +447,12 @@ static int strela_probe(struct platform_device *pdev)
 		if (request_threaded_irq(irq_conf, strela_conf_irq_check, strela_conf_process, IRQF_ONESHOT | IRQF_SHARED, dev_name(dev), strela_dev)) 
 		{
 			dev_err(dev, "failure when requesting IRQ %d for config loading completed events\n", irq_conf);
-			goto fail;
+			goto irq_fail;
 		}
 	}
 	else {
 		dev_err(dev, "no IRQ provided for config loading completed events\n");
-		goto fail;
+		goto irq_fail;
 	}
 
 	irq_exec = platform_get_irq_byname_optional(pdev, "exec_done");
@@ -455,19 +463,21 @@ static int strela_probe(struct platform_device *pdev)
 		if (request_threaded_irq(irq_exec, strela_exec_irq_check, strela_exec_process, IRQF_ONESHOT | IRQF_SHARED, dev_name(dev), strela_dev)) 
 		{
 			dev_err(dev, "failure when requesting IRQ %d for execution completed events\n", irq_exec);
-			goto fail;
+			goto irq_fail;
 		}
 	}
 	else {
 		dev_err(dev, "no IRQ provided for execution completed events\n");
-		goto fail;
+		goto irq_fail;
 	}
 
 	dev_info(dev, "Registering STRELA device\n");
 
 	return 0;
 
- fail:
+irq_fail:
+	misc_deregister(&strela_dev->miscdev);
+fail:
 
 	if (strela_dev)
  		kfree(strela_dev);
