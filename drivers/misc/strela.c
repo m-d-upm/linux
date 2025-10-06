@@ -84,6 +84,9 @@ struct strela_device {
 	bool wake_up_int_exec;
 };
 
+static int int_req = 0;
+static int int_handled = 0;
+
 static int strela_open(struct inode *inode, struct file *fp)
 {
 	return 0;
@@ -267,7 +270,12 @@ static irqreturn_t strela_conf_process(int irq, void *data)
 	strela_dev->wake_up_int_conf = true;
 	wake_up_interruptible(&strela_dev->wq_conf);
 
+	dev_info(strela_dev->miscdev.parent, "IRQ: %d handled %d times, requested %d times\n", irq, int_handled, int_req);
+
 	dev_info(strela_dev->miscdev.parent, "IRQ: %d handled\n", irq);
+
+	u32 status_reg = ioread32(strela_dev->regs.strela_ctrl);
+	dev_info(strela_dev->miscdev.parent, "status reg: %x\n", status_reg);
 
 	return IRQ_HANDLED;
 }
@@ -279,8 +287,11 @@ static irqreturn_t strela_conf_irq_check(int irq, void *data)
 
 	if (status_reg & STRELA_CTRL_BIT_PENDING_INT_CONFIG)
 	{
+		++int_handled;
 		return IRQ_WAKE_THREAD;
 	}
+
+	++int_req;
 
 	return IRQ_NONE;
 }
@@ -466,6 +477,10 @@ static int strela_probe(struct platform_device *pdev)
 		dev_err(dev, "no IRQ provided for execution completed events\n");
 		goto irq_fail;
 	}
+
+	u32 status_reg = ioread32(strela_dev->regs.strela_ctrl);
+	dev_info(dev, "status reg: %x\n", status_reg);
+
 
 	dev_info(dev, "Registering STRELA device\n");
 
