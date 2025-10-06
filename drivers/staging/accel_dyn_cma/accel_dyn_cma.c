@@ -19,7 +19,7 @@
 
 #define ACCEL_DYN_CMA_DRV_NAME "accel_dyn_cma"
 
-#define ACCEL_DYN_CMA_MAX_NUM_BUFS (8)
+#define ACCEL_DYN_CMA_MAX_NUM_BUFS (256)
 
 struct accel_dyn_cma_alloc_info {
 	struct device *buf_dev;
