@@ -437,6 +437,8 @@ static int lowrisc_mii_init(struct net_device *ndev)
     new_bus = alloc_mdio_bitbang(&(priv->ctrl));
 
 	if (!new_bus) {
+   		netif_warn(priv, probe, priv->ndev, "Failed to allocate MDIO bitbang bus\n");
+
 		err = -ENOMEM;
 		goto err_out_1;
 	}
@@ -807,7 +809,10 @@ static int lowrisc_100MHz_probe(struct platform_device *ofdev)
 	/* Set the MAC address in the Ether100MHz device */
 	lowrisc_update_address(priv, ndev->dev_addr);
 
-	lowrisc_mii_init(ndev);
+    if(lowrisc_mii_init(ndev))
+    {
+       	dev_info(dev, "There was a problem with MDIO bus configuration\n");
+    }
 
 	/* Finally, register the device */
 	rc = register_netdev(ndev);
