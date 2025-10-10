@@ -218,6 +218,7 @@ static int lowrisc_set_mac_address(struct net_device *ndev, void *address)
     struct net_local *priv = netdev_priv(ndev);
     struct sockaddr *addr = address;
     memcpy(ndev->dev_addr, addr->sa_data, ndev->addr_len);
+    eth_hw_addr_set(ndev, addr->sa_data);
     lowrisc_update_address(priv, ndev->dev_addr);
     return 0;
 }
@@ -647,7 +648,7 @@ static int lowrisc_open(struct net_device *ndev)
         return retval;
     }
 
-    lowrisc_update_address(priv, ndev->dev_addr);
+    //lowrisc_update_address(priv, ndev->dev_addr);
 
     /* We're ready to go */
     napi_enable(&priv->napi);
@@ -781,7 +782,7 @@ static int lowrisc_100MHz_probe(struct platform_device *ofdev)
 
 	dev_set_drvdata(dev, ndev);
 	SET_NETDEV_DEV(ndev, &ofdev->dev);
-        platform_set_drvdata(ofdev, ndev);
+    platform_set_drvdata(ofdev, ndev);
 
 	priv = netdev_priv(ndev);
 	priv->ndev = ndev;
