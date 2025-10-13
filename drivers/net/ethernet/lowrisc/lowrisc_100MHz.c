@@ -188,7 +188,7 @@ static void lowrisc_update_address(struct net_local *priv, u8 *address_ptr)
  * @drvdata:	Pointer to the Ether100MHz device private data
  * @address_ptr:Pointer to the 6-byte buffer to receive the MAC address (MAC address is a 48-bit value)
  *
- * In lowrisc the starting value is programmed by the boot loader according to DIP switch [15:12]
+ * In lowRISC the starting value is programmed by the boot loader according to DIP switch [15:12]
  */
 
 static void lowrisc_read_mac_address(struct net_local *priv, u8 *address_ptr)
@@ -802,14 +802,21 @@ static int lowrisc_100MHz_probe(struct platform_device *ofdev)
                (size_t)(priv->ioaddr));
 
     priv->irq = platform_get_irq(ofdev, 0);
-
+        
     /* get the MAC address set by the boot loader */
-    lowrisc_read_mac_address(priv, mac_address);
-	memcpy(ndev->dev_addr, mac_address, ETH_ALEN);
+    //lowrisc_read_mac_address(priv, mac_address);
+	//memcpy(ndev->dev_addr, mac_address, ETH_ALEN);
+
+    /* get the MAC address set in the device tree */
+    rc = of_get_ethdev_address(ofdev->dev.of_node, ndev);
+	if (rc) {
+		dev_warn(dev, "No MAC address found, using random\n");
+		eth_hw_addr_random(ndev);
+	}
 
 	/* Set the MAC address in the Ether100MHz device */
 	lowrisc_update_address(priv, ndev->dev_addr);
-
+    
     if(lowrisc_mii_init(ndev))
     {
        	dev_info(dev, "There was a problem with MDIO bus configuration\n");
